@@ -22,3 +22,6 @@ obj-$(CONFIG_MACH_M4_UL) += m4/
 
 # PYRAMID
 obj-$(CONFIG_MACH_PYRAMID) += pyramid/
+
+# RUBY
+obj-$(CONFIG_MACH_RUBY) += ruby/
