@@ -3024,6 +3024,8 @@ static void __init msm8x60_gfx_init(void)
 	platform_device_register(&msm_kgsl_2d1);
 }
 
+extern int msm8x60_multi_sdio_init(void);
+
 static void __init ruby_init(void)
 {
         int rc;
@@ -3150,6 +3152,8 @@ static void __init ruby_init(void)
         ruby_init_keypad();
         ruby_wifi_init();
         headset_device_register();
+
+	msm8x60_multi_sdio_init();
 	msm_fusion_setup_pinctrl();
 
 	/* change S4B to 1.25v, L22A to 1.2v for DDR stability issue */
