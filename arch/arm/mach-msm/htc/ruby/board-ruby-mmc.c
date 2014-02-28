@@ -81,95 +81,20 @@ static void config_gpio_table(uint32_t *table, int len)
 	}
 }
 
-#ifdef CONFIG_TIWLAN_SDIO
-static struct sdio_embedded_func wifi_func_array[] = {
-	{
-		.f_class        = SDIO_CLASS_NONE,
-		.f_maxblksize   = 512,
-	},
-	{
-		.f_class        = SDIO_CLASS_WLAN,
-		.f_maxblksize   = 512,
-	},
-};
-
-static struct embedded_sdio_data ruby_wifi_emb_data = {
-	.cis    = {
-		.vendor         = SDIO_VENDOR_ID_TI,
-		.device         = SDIO_DEVICE_ID_TI_WL12xx,
-		.blksize        = 512,
-		.max_dtr        = 25000000,
-	},
-	.cccr   = {
-		.multi_block	= 1,
-		.low_speed	= 0,
-		.wide_bus	= 1,
-		.high_power	= 0,
-		.high_speed	= 0,
-		.disable_cd	= 1,
-	},
-	.funcs  = wifi_func_array,
-	.num_funcs = 2,
-};
-
-static void (*wifi_status_cb)(int card_present, void *dev_id);
-static void *wifi_status_cb_devid;
-
-static int
-ruby_wifi_status_register(void (*callback)(int card_present, void *dev_id),
-				void *dev_id)
-{
-	if (wifi_status_cb)
-		return -EAGAIN;
-
-	wifi_status_cb = callback;
-	wifi_status_cb_devid = dev_id;
-	return 0;
-}
-
-static int ruby_wifi_cd;	/* WiFi virtual 'card detect' status */
-
-static unsigned int ruby_wifi_status(struct device *dev)
-{
-	return ruby_wifi_cd;
-}
-#endif
-
-#define MSM_MPM_PIN_SDC4_DAT1	23
 void ruby_remove_wifi(int id, struct mmc_host *mmc);
 void ruby_probe_wifi(int id, struct mmc_host *mmc);
 
 static struct mmc_platform_data ruby_wifi_data = {
-	.ocr_mask	= MMC_VDD_165_195,
-#ifdef CONFIG_TIWLAN_SDIO
-	.status			= ruby_wifi_status,
-	.register_status_notify	= ruby_wifi_status_register,
-	.embedded_sdio		= &ruby_wifi_emb_data,
-#endif
+	.ocr_mask	= MMC_VDD_27_28 | MMC_VDD_28_29,
 	.mmc_bus_width	= MMC_CAP_4_BIT_DATA,
 	.msmsdcc_fmin   = 400000,
 	.msmsdcc_fmid   = 24000000,
 	.msmsdcc_fmax   = 48000000,
 	.nonremovable	= 1,
-	.mpm_sdiowakeup_int = MSM_MPM_PIN_SDC4_DAT1,
 	.board_probe	= ruby_probe_wifi,
 	.board_remove	= ruby_remove_wifi,
 	.ti_sdio	= 1,
 };
-
-#ifdef CONFIG_TIWLAN_SDIO
-int ruby_wifi_set_carddetect(int val)
-{
-	printk(KERN_INFO "%s: %d\n", __func__, val);
-	ruby_wifi_cd = val;
-	if (wifi_status_cb)
-		wifi_status_cb(val, wifi_status_cb_devid);
-	else
-		printk(KERN_WARNING "%s: Nobody to notify\n", __func__);
-	return 0;
-}
-EXPORT_SYMBOL(ruby_wifi_set_carddetect);
-#endif
 
 int ruby_wifi_power(int on)
 {
@@ -254,9 +179,6 @@ int __init ruby_init_wifi_mmc()
 {
 	uint32_t id;
 	const unsigned SDC4_HDRV_PULL_CTL_ADDR = (unsigned)(MSM_TLMM_BASE + 0x20A0);
-#ifdef CONFIG_TIWLAN_SDIO
-	wifi_status_cb = NULL;
-#endif
 
 	printk(KERN_INFO "ruby: %s\n", __func__);
 

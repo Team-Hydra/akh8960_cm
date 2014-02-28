@@ -85,9 +85,6 @@ static struct wl12xx_platform_data ruby_wlan_data __initdata = {
 
 extern int ruby_wifi_power(int on);
 extern int ruby_wifi_reset(int on);
-#ifdef CONFIG_TIWLAN_SDIO
-extern int ruby_wifi_set_carddetect(int on);
-#endif
 extern int ruby_wifi_get_mac_addr(unsigned char *buf);
 
 #define PREALLOC_WLAN_NUMBER_OF_SECTIONS	4
@@ -157,9 +154,6 @@ static struct resource ruby_wifi_resources[] = {
 static struct wifi_platform_data ruby_wifi_control = {
 	.set_power      = ruby_wifi_power,
 	.set_reset      = ruby_wifi_reset,
-#ifdef CONFIG_TIWLAN_SDIO
-	.set_carddetect = ruby_wifi_set_carddetect,
-#endif
 	.mem_prealloc   = ruby_wifi_mem_prealloc,
 };
 
