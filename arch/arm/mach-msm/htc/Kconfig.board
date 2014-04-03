@@ -29,6 +29,9 @@ source "arch/arm/mach-msm/htc/pyramid/Kconfig"
 # SHOOTER
 source "arch/arm/mach-msm/htc/shooter/Kconfig"
 
+# HOLIDAY
+source "arch/arm/mach-msm/htc/holiday/Kconfig"
+
 # VISION
 source "arch/arm/mach-msm/htc/vision/Kconfig"
 
