@@ -682,7 +682,7 @@ void msm_camio_camif_pad_reg_reset(void);
 void msm_camio_camif_pad_reg_reset_2(void);
 
 void msm_camio_vfe_blk_reset(void);
-
+static struct msm_camera_csi_params *csi_params;
 int32_t msm_camio_3d_enable(const struct msm_camera_sensor_info *sinfo);
 void msm_camio_3d_disable(void);
 void msm_camio_clk_sel(enum msm_camio_clk_src_type);
