@@ -1,4 +1,4 @@
-/* linux/arch/arm/mach-msm/board-holiday.h
+/* linux/arch/arm/mach-msm/board-spade.h
  *
  * Copyright (C) 2010-2011 HTC Corporation.
  *
@@ -17,212 +17,201 @@
 
 #include <mach/board.h>
 #include <mach/msm_memtypes.h>
+#include <mach/rpm-regulator.h>
+#include <linux/regulator/pmic8901-regulator.h>
+#include <mach/board-msm8660.h>
 
 #define HOLIDAY_PROJECT_NAME	"holiday"
-
-#define HOLIDAY_AP2MDM_PMIC_RESET_TIME_MS		1400
 
 #define MSM_RAM_CONSOLE_BASE	MSM_HTC_RAM_CONSOLE_PHYS
 #define MSM_RAM_CONSOLE_SIZE	MSM_HTC_RAM_CONSOLE_SIZE
 
-#if defined(CONFIG_CRYPTO_DEV_QCRYPTO) || \
-                defined(CONFIG_CRYPTO_DEV_QCRYPTO_MODULE) || \
-                defined(CONFIG_CRYPTO_DEV_QCEDEV) || \
-                defined(CONFIG_CRYPTO_DEV_QCEDEV_MODULE)
-#define QCE_SIZE                0x10000
-#define QCE_0_BASE                0x18500000
+/*** Memory map ***/
+#define MSM_SMI_BASE         0x38000000
+#define MSM_SMI_SIZE         0x4000000
+
+#ifdef CONFIG_FB_MSM_TRIPLE_BUFFER
+#define MSM_FB_PRIM_BUF_SIZE (960 * 544 * 4 * 3) /* 4 bpp x 3 pages */
+#else
+#define MSM_FB_PRIM_BUF_SIZE (960 * 544 * 4 * 2) /* 4 bpp x 2 pages */
 #endif
 
-/*** Memory map ***/
-#define MSM_ION_HEAP_NUM      5
 
-#define MSM_FB_SIZE roundup((960 * ALIGN(540, 32) * 4 * 3) + 0x3F4800, 4096)
+#ifdef CONFIG_FB_MSM_HDMI_MSM_PANEL
+#define MSM_FB_EXT_BUF_SIZE (1920 * 1088 * 2 * 1) /* 2 bpp x 1 page */
+#elif defined(CONFIG_FB_MSM_TVOUT)
+#define MSM_FB_EXT_BUF_SIZE (720 * 576 * 2 * 2) /* 2 bpp x 2 pages */
+#else
+#define MSM_FB_EXT_BUF_SIZE 0
+#endif
 
-// PMEM SMI
-#define MSM_SMI_SIZE          0x4000000
-#define KERNEL_SMI_SIZE       0xE00000
-#define USER_SMI_SIZE         (MSM_SMI_SIZE - KERNEL_SMI_SIZE)
-#define MSM_PMEM_SMIPOOL_SIZE USER_SMI_SIZE
+/* Note: must be multiple of 4096 */
+#define MSM_FB_SIZE roundup(MSM_FB_PRIM_BUF_SIZE + MSM_FB_EXT_BUF_SIZE, 4096)
 
-// PMEM
-#define MSM_PMEM_AUDIO_SIZE   0x239000
-#define MSM_PMEM_ADSP_SIZE    0x1800000
+#ifdef CONFIG_FB_MSM_OVERLAY0_WRITEBACK
+#define MSM_FB_OVERLAY0_WRITEBACK_SIZE roundup((960 * 544 * 3 * 2), 4096)
+#else
+#define MSM_FB_OVERLAY0_WRITEBACK_SIZE (0)
+#endif  /* CONFIG_FB_MSM_OVERLAY0_WRITEBACK */
 
-// ION SMI
-#define MSM_ION_MM_SIZE       0x3500000
+#ifdef CONFIG_FB_MSM_OVERLAY1_WRITEBACK
+#define MSM_FB_OVERLAY1_WRITEBACK_SIZE roundup((1920 * 1088 * 3 * 2), 4096)
+#else
+#define MSM_FB_OVERLAY1_WRITEBACK_SIZE (0)
+#endif  /* CONFIG_FB_MSM_OVERLAY1_WRITEBACK */
 
-// ION
-#define MSM_ION_WB_SIZE       0x800000
-#define MSM_ION_SF_SIZE       0x29A0000
-#define MSM_ION_MM_FW_SIZE    0x200000
+#define PHY_BASE_ADDR1       0x48000000
+#define SIZE_ADDR1           0x28000000
 
-// Base addresses
-#define MSM_SMI_BASE          (0x38000000)
-#define KERNEL_SMI_BASE       (MSM_SMI_BASE)
-#define USER_SMI_BASE         (KERNEL_SMI_BASE + KERNEL_SMI_SIZE)
-#define MSM_PMEM_SMIPOOL_BASE USER_SMI_BASE
-#define MSM_ION_SF_BASE       (0x40400000)
-#define MSM_PMEM_AUDIO_BASE   (0x46400000)
-#define MSM_ION_WB_BASE       (0x7A900000)
-#define MSM_ION_MM_FW_BASE    (0x7B100000)
-#define MSM_ION_MM_BASE       (0x7B300000)
-#define MSM_PMEM_ADSP_BASE    (0x7E800000)
+#define MSM_ION_MM_FW_SIZE   0x200000
+#define MSM_ION_MM_SIZE      0x3D00000
+#define MSM_ION_MFC_SIZE     0x100000
+#define MSM_ION_SF_SIZE      0x3000000
+#define MSM_ION_WB_SIZE      0x600000
+#define MSM_ION_CAMERA_SIZE  0x2400000
+#define MSM_ION_AUDIO_SIZE   0x4CF000
 
-// Userspace allocation
-#define PHY_BASE_ADDR1  0x48000000
-#define SIZE_ADDR1      0x32000000
+#define MSM_ION_HEAP_NUM     8
+
+#define MSM_ION_MM_FW_BASE   0x38000000
+#define MSM_ION_MM_BASE      0x38200000
+#define MSM_ION_MFC_BASE     0x3BF00000
+#define MSM_ION_CAMERA_BASE  0x40400000
+#define MSM_ION_WB_BASE      0x42800000
+#define MSM_ION_SF_BASE      0x49800000
 /*** END Memory map ***/
-
-extern int panel_type;
 
 /* GPIO definition */
 
-/* Audio */
-#define HOLIDAY_GPIO_AUD_A1026_WAKEUP	(70)
-#define HOLIDAY_GPIO_AUD_A1026_INT	(94)
-#define HOLIDAY_AUD_A1026_CLK   -1
-
-
 /* Direct Keys */
-#define HOLIDAY_GPIO_KEY_VOL_DOWN	(103)
-#define HOLIDAY_GPIO_KEY_VOL_UP	  (104)
-#define HOLIDAY_GPIO_KEY_POWER	   (125)
+#define HOLIDAY_GPIO_KEY_VOL_DOWN    (103)
+#define HOLIDAY_GPIO_KEY_VOL_UP      (104)
+#define HOLIDAY_GPIO_KEY_POWER          (125)
 
 /* Battery */
+#define HOLIDAY_GPIO_MBAT_IN            (61)
+#define HOLIDAY_GPIO_CHG_INT		(126)
 
 /* Wifi */
-#define HOLIDAY_GPIO_WIFI_IRQ			  (46)
-#define HOLIDAY_GPIO_WIFI_SHUTDOWN_N	   (62)
-
+#define HOLIDAY_GPIO_WIFI_IRQ              (46)
+#define HOLIDAY_GPIO_WIFI_SHUTDOWN_N       (96)
 /* Sensors */
-#define HOLIDAY_GPIO_SENSOR_I2C_SCL		(115)
-#define HOLIDAY_GPIO_SENSOR_I2C_SDA		(116)
-#define HOLIDAY_GPIO_GYRO_INT			(126)
-#define HOLIDAY_GPIO_COMPASS_INT		(128)
-#define HOLIDAY_GPIO_GSENSOR_INT_N		(127)
-#define HOLIDAY_LAYOUTS			{ \
-		{ { 0,  1, 0}, { 1,  0,  0}, {0, 0, -1} }, \
-		{ { 0, -1, 0}, {-1,  0,  0}, {0, 0,  1} }, \
-		{ { 1,  0, 0}, { 0, -1,  0}, {0, 0, -1} }, \
-		{ { 1,  0, 0}, { 0,  0,  1}, {0, 1,  0} }  \
-					}
-/* General */
-#define HOLIDAY_GENERAL_I2C_SCL		(59)
-#define HOLIDAY_GENERAL_I2C_SDA		(60)
+#define HOLIDAY_SENSOR_I2C_SDA		(72)
+#define HOLIDAY_SENSOR_I2C_SCL		(73)
+#define HOLIDAY_GYRO_INT               (127)
+#define HOLIDAY_ECOMPASS_INT           (128)
+#define HOLIDAY_GSENSOR_INT           (129)
 
 /* Microp */
 
 /* TP */
-#define HOLIDAY_TP_I2C_SDA		   (51)
-#define HOLIDAY_TP_I2C_SCL		   (52)
-#define HOLIDAY_TP_ATT_N			 (117)
+#define HOLIDAY_TP_I2C_SDA           (51)
+#define HOLIDAY_TP_I2C_SCL           (52)
+#define HOLIDAY_TP_ATT_N             (65)
+#define HOLIDAY_TP_ATT_N_XC          (57)
 
 /* LCD */
-#define HOLIDAY_GPIO_LCM_RST_N		(137)
-#define HOLIDAY_GPIO_LCM_ID0		(64)
-#define HOLIDAY_GPIO_LCM_ID1		(65)
-#define HOLIDAY_GPIO_LCM_TE			(28)
+#define GPIO_LCD_TE	28
+#define GPIO_LCM_RST_N			(66)
+#define GPIO_LCM_ID			(50)
 
 /* Audio */
-#define HOLIDAY_AUD_CODEC_RST		(118)
-
-/* Battery */
-#define HOLIDAY_GPIO_MBAT_IN		(61)
-#define HOLIDAY_GPIO_CHG_INT		(124)
+#define HOLIDAY_AUD_CODEC_RST        (67)
 
 /* BT */
-#define HOLIDAY_GPIO_BT_HOST_WAKE	  (45)
-#define HOLIDAY_GPIO_BT_UART1_TX	   (53)
-#define HOLIDAY_GPIO_BT_UART1_RX	   (54)
-#define HOLIDAY_GPIO_BT_UART1_CTS	  (55)
-#define HOLIDAY_GPIO_BT_UART1_RTS	  (56)
-#define HOLIDAY_GPIO_BT_CHIP_WAKE	  (130)
-#define HOLIDAY_GPIO_BT_RESET_N		(142)
-#define HOLIDAY_GPIO_BT_SHUTDOWN_N	 (57)
+#define HOLIDAY_GPIO_BT_HOST_WAKE      (45)
+#define HOLIDAY_GPIO_BT_UART1_TX       (53)
+#define HOLIDAY_GPIO_BT_UART1_RX       (54)
+#define HOLIDAY_GPIO_BT_UART1_CTS      (55)
+#define HOLIDAY_GPIO_BT_UART1_RTS      (56)
+#define HOLIDAY_GPIO_BT_SHUTDOWN_N     (100)
+#define HOLIDAY_GPIO_BT_CHIP_WAKE      (130)
+#define HOLIDAY_GPIO_BT_RESET_N        (142)
 
-/* USB and UART */
-#define HOLIDAY_GPIO_UART_RX		   (105)
-#define HOLIDAY_GPIO_UART_TX		   (106)
-
-/* Cable detect */
-#define HOLIDAY_GPIO_MHL_USB_SEL		(1)
-#define HOLIDAY_GPIO_USB_ID				(63)
+/* USB */
+#define HOLIDAY_GPIO_USB_ID        (63)
+#define HOLIDAY_GPIO_MHL_RESET        (70)
+#define HOLIDAY_GPIO_MHL_INT        (71)
+#define HOLIDAY_GPIO_MHL_USB_SWITCH        (99)
 
 /* Camera */
-#define HOLIDAY_CAM_I2C_SDA			 (47)
-#define HOLIDAY_CAM_I2C_SCL			 (48)
-#define HOLIDAY_CLK_SWITCH 				(44)
-#define HOLIDAY_CAM1_RST				(49)
-#define HOLIDAY_CAM1_VCM_PD				(58)
-#define HOLIDAY_CAM2_RST				(101)
-#define HOLIDAY_CAM2_STANDBY			(102)
-#define HOLIDAY_CAM2_CAM_ID				(43)
+#define HOLIDAY_CAM_CAM1_ID           (10)
+#define HOLIDAY_CAM_I2C_SDA           (47)
+#define HOLIDAY_CAM_I2C_SCL           (48)
+#define HOLIDAY_CAM_MCLK     	 (32)
+#define HOLIDAY_CAM_VCM_PD      (58)
+#define HOLIDAY_CAM1_RSTz       (137)
+#define HOLIDAY_CAM2_RSTz       (138)
+#define HOLIDAY_CAM2_PWDN       (140)
+#define HOLIDAY_MCLK_SWITCH     (141)
+
+/* General */
+#define HOLIDAY_GENERAL_I2C_SDA		(59)
+#define HOLIDAY_GENERAL_I2C_SCL		(60)
 
 /* Flashlight */
-#define HOLIDAY_FLASH_EN			 (138)
-#define HOLIDAY_TORCH_EN			 (30)
-
-#ifdef CONFIG_FB_MSM_HDMI_MHL
-/* MHL */
-#define HOLIDAY_GPIO_MHL_RST_N   		(2)
-#define HOLIDAY_GPIO_MHL_INTR_N  		(50)
-#define HOLIDAY_GPIO_MHL_SCL			(170)
-#define HOLIDAY_GPIO_MHL_SDA			(171)
-#define HOLIDAY_GPIO_MHL_HPD			(172)
-#endif
+#define HOLIDAY_FLASH_EN             (29)
+#define HOLIDAY_TORCH_EN             (30)
 
 /* Accessory */
-#define HOLIDAY_GPIO_AUD_HP_DET		(31)
+#define HOLIDAY_GPIO_AUD_HP_DET        (31)
 
 /* SPI */
-#define HOLIDAY_SPI_DO				 (33)
-#define HOLIDAY_SPI_DI				 (34)
-#define HOLIDAY_SPI_CS				 (35)
-#define HOLIDAY_SPI_CLK				(36)
+#define HOLIDAY_SPI_DO                 (33)
+#define HOLIDAY_SPI_DI                 (34)
+#define HOLIDAY_SPI_CS                 (35)
+#define HOLIDAY_SPI_CLK                (36)
 
-/* SD */
-#define HOLIDAY_SD_DETECT_PIN				(37)
-
-/* LTE */
-#define HOLIDAY_AP2MDM_STATUS		 (136)
-#define HOLIDAY_MDM2AP_STATUS		 (134)
-#define HOLIDAY_MDM2AP_WAKEUP		  (40)
-#define HOLIDAY_MDM2AP_ERRFATAL	   (133)
-#define HOLIDAY_AP2MDM_ERRFATAL		(93)
-
-#define HOLIDAY_AP2MDM_PMIC_RESET_N   (131)
-#define HOLIDAY_AP2MDM_KPDPWR_N		(38)
-#define HOLIDAY_AP2PMIC_TMPNI_CKEN	(141)
-
-#define HOLIDAY_MDM2AP_VDDMIN		(140)
-#define HOLIDAY_MDM2AP_SYNC		   (129)
-#define HOLIDAY_AP2MDM_WAKEUP		 (135)
-#define HOLIDAY_MDM2AP_VFR			 (29)
-
-#define PSNENOR_INTz		(123)
 /* PMIC */
 
 /* PMIC GPIO definition */
 #define PMGPIO(x) (x-1)
-#define HOLIDAY_VOL_UP			 (104)
-#define HOLIDAY_VOL_DN			 (103)
-#define HOLIDAY_AUD_MIC_SEL2	PMGPIO(16)
-#define HOLIDAY_AUD_HANDSET_ENO	PMGPIO(18)
-#define HOLIDAY_AUD_A1026_RST	PMGPIO(19)
-/* #define HOLIDAY_AUD_QTR_RESET	  PMGPIO(21) */
-#define HOLIDAY_PS_VOUT			PMGPIO(22)
-#define HOLIDAY_GREEN_LED		  PMGPIO(24)
-#define HOLIDAY_AMBER_LED		  PMGPIO(25)
-#define HOLIDAY_AUD_MIC_SEL1		PMGPIO(37)
-#define HOLIDAY_PLS_INT			PMGPIO(35)
-#define HOLIDAY_WIFI_BT_SLEEP_CLK  PMGPIO(38)
-#define HOLIDAY_TP_RST			 PMGPIO(23)
+#define HOLIDAY_AUD_HP_EN          PMGPIO(18)
+#define HOLIDAY_HAP_ENABLE         PMGPIO(19)
+#define HOLIDAY_AUD_QTR_RESET      PMGPIO(21)
+#define HOLIDAY_TP_RST             PMGPIO(23)
+#define HOLIDAY_GREEN_LED          PMGPIO(24)
+#define HOLIDAY_AMBER_LED          PMGPIO(25)
+#define HOLIDAY_AUD_MIC_SEL        PMGPIO(26)
 #define HOLIDAY_CHG_STAT	   PMGPIO(33)
-#define HOLIDAY_AUD_REMO_PRES	  PMGPIO(7)
+#define HOLIDAY_SDC3_DET           PMGPIO(34)
+#define HOLIDAY_PLS_INT            PMGPIO(35)
+#define HOLIDAY_AUD_REMO_PRES      PMGPIO(37)
+#define HOLIDAY_WIFI_BT_SLEEP_CLK  PMGPIO(38)
 
-int __init holiday_init_mmc(void);
+extern struct regulator_init_data msm_saw_regulator_pdata_s0;
+extern struct regulator_init_data msm_saw_regulator_pdata_s1;
+extern struct rpm_regulator_platform_data holiday_rpm_regulator_early_pdata __devinitdata;
+extern struct rpm_regulator_platform_data holiday_rpm_regulator_pdata __devinitdata;
+extern struct platform_device msm8x60_8901_mpp_vreg __devinitdata;
+extern struct pm8901_vreg_pdata pm8901_regulator_pdata[];
+extern int pm8901_regulator_pdata_len;
+extern struct platform_device msm_adc_device;
+
+void __init holiday_init_mmc(void);
+int __init holiday_init_wifi_mmc(void);
 void __init holiday_audio_init(void);
 int __init holiday_init_keypad(void);
+void __init holiday_init_fb(void);
+void __init holiday_init_pmic(void);
 int __init holiday_wifi_init(void);
+void __init holiday_gpio_mpp_init(void);
+void holiday_init_gpiomux(void);
+void __init msm8x60_allocate_fb_region(void);
+void __init holiday_pm8901_gpio_mpp_init(void);
+void msm8x60_mdp_writeback(struct memtype_reserve *reserve_table);
+#ifdef CONFIG_FB_MSM_HDMI_MSM_PANEL
+int hdmi_enable_5v(int on);
+#endif
+#define _GET_REGULATOR(var, name) do {					\
+	if (var == NULL) {						\
+		var = regulator_get(NULL, name);			\
+		if (IS_ERR(var)) {					\
+			pr_err("'%s' regulator not found, rc=%ld\n",	\
+				name, PTR_ERR(var));			\
+			var = NULL;					\
+		}							\
+	}								\
+} while (0)
 
 #endif /* __ARCH_ARM_MACH_MSM_BOARD_HOLIDAY_H */
