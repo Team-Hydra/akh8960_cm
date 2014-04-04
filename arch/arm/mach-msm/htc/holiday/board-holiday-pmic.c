@@ -75,7 +75,7 @@ struct pm8xxx_mpp_init_info {
 	} \
 }
 
-#define PM8058_LINE_IN_DET_GPIO	PM8058_GPIO_PM_TO_SYS(28)
+#define PM8058_LINE_IN_DET_GPIO	PM8058_GPIO_PM_TO_SYS(18)
 
 static struct othc_accessory_info othc_accessories[]  = {
 	{
@@ -202,14 +202,6 @@ static struct pmic8058_othc_config_pdata othc_config_pdata_1 = {
 	.micbias_regulator = &othc_reg,
 };
 
-static struct pmic8058_othc_config_pdata othc_config_pdata_2 = {
-	.micbias_select = OTHC_MICBIAS_2,
-	.micbias_capability = OTHC_MICBIAS,
-	.micbias_enable = OTHC_SIGNAL_OFF,
-	.micbias_regulator = &othc_reg,
-};
-
-
 static void __init msm8x60_init_pm8058_othc(void)
 {
 	if (SOCINFO_VERSION_MAJOR(socinfo_get_version()) == 2) {
@@ -266,6 +258,12 @@ static int pmic8058_xoadc_vreg_setup(void)
 		goto fail;
 	}
 
+	rc = regulator_enable(vreg_ldo18_adc);
+	if (rc) {
+		pr_err("%s: Enable of regulator ldo18_adc "
+					"failed\n", __func__);
+		goto fail;
+	}
 	return rc;
 fail:
 	regulator_put(vreg_ldo18_adc);
@@ -278,10 +276,10 @@ static void pmic8058_xoadc_vreg_shutdown(void)
 }
 
 static struct adc_properties pm8058_xoadc_data = {
-	.adc_reference          = 2200, 
-	.bitresolution         = 15,
-	.bipolar                = 0,
-	.conversiontime         = 54,
+	.adc_reference 	= 2200, 
+	.bitresolution	= 15,
+	.bipolar	= 0,
+	.conversiontime	= 54,
 };
 
 struct xoadc_platform_data pm8058_xoadc_pdata = {
@@ -294,12 +292,14 @@ struct xoadc_platform_data pm8058_xoadc_pdata = {
 };
 
 #ifdef CONFIG_PMIC8058
-#define PMIC_GPIO_SDC3_DET 22
-#define PMIC_GPIO_TOUCH_DISC_INTR 5
+
+#define UI_INT1_N	25
+#define UI_INT3_N	14
 
 static struct pm8xxx_mpp_init_info pm8058_mpps[] = {
 	PM8XXX_MPP_INIT(10, D_INPUT, PM8058_MPP_DIG_LEVEL_S3, DIN_TO_INT),
 	PM8XXX_MPP_INIT(11, D_BI_DIR, PM8058_MPP_DIG_LEVEL_S3, BI_PULLUP_10KOHM),
+
 };
 
 void __init holiday_gpio_mpp_init(void)
@@ -311,48 +311,43 @@ void __init holiday_gpio_mpp_init(void)
 	};
 
 	struct pm8xxx_gpio_init gpio_cfgs[] = {
-          PM8XXX_GPIO_INIT(PM8058_GPIO_PM_TO_SYS(holiday_SDC3_DET),
-                           PM_GPIO_DIR_IN, 0, 0, PM_GPIO_PULL_UP_30, 2, 0,
-                           PM_GPIO_FUNC_NORMAL, 0, 0),
-#ifdef CONFIG_MSM8X60_AUDIO
-          /* Audio Microphone Selector */
-          PM8XXX_GPIO_INIT(PM8058_GPIO_PM_TO_SYS(holiday_AUD_MIC_SEL),    /* 26 */
-                           PM_GPIO_DIR_OUT, PM_GPIO_OUT_BUF_CMOS, 0, PM_GPIO_PULL_NO,
-                           6, PM_GPIO_STRENGTH_HIGH, PM_GPIO_FUNC_NORMAL, 0, 0),
-          /* TPA2051 Power */
-          PM8XXX_GPIO_INIT(PM8058_GPIO_PM_TO_SYS(holiday_AUD_HP_EN),
-                           PM_GPIO_DIR_OUT, PM_GPIO_OUT_BUF_CMOS, 0, PM_GPIO_PULL_NO,
-                           6, PM_GPIO_STRENGTH_HIGH, PM_GPIO_FUNC_NORMAL, 0, 0),
-          /* Timpani Reset */
-          PM8XXX_GPIO_INIT(PM8058_GPIO_PM_TO_SYS(holiday_AUD_QTR_RESET),
-                           PM_GPIO_DIR_OUT, PM_GPIO_OUT_BUF_CMOS, 1, PM_GPIO_PULL_DN,
-                           2, PM_GPIO_STRENGTH_HIGH, PM_GPIO_FUNC_NORMAL, 0, 0),
-#endif 
-          PM8XXX_GPIO_INIT(PM8058_GPIO_PM_TO_SYS(holiday_PLS_INT),
-                           PM_GPIO_DIR_IN, 0, 0, PM_GPIO_PULL_UP_1P5,
-                           PM8058_GPIO_VIN_L5, 0, PM_GPIO_FUNC_NORMAL, 0, 0),
-#ifdef CONFIG_LEDS_PM8058
-          /* Green LED */
-          PM8XXX_GPIO_INIT(PM8058_GPIO_PM_TO_SYS(holiday_GREEN_LED),
-                           PM_GPIO_DIR_OUT, PM_GPIO_OUT_BUF_CMOS, 1, PM_GPIO_PULL_NO,
-                           PM8058_GPIO_VIN_L5, PM_GPIO_STRENGTH_HIGH, PM_GPIO_FUNC_2, 0, 0),
-          /* AMBER */
-          PM8XXX_GPIO_INIT(PM8058_GPIO_PM_TO_SYS(holiday_AMBER_LED),
-                           PM_GPIO_DIR_OUT, PM_GPIO_OUT_BUF_CMOS, 1, PM_GPIO_PULL_NO,
-                           PM8058_GPIO_VIN_L5, PM_GPIO_STRENGTH_HIGH, PM_GPIO_FUNC_2, 0, 0),
-#endif
-           /* Volume Up Key */
-          PM8XXX_GPIO_INIT(PM8058_GPIO_PM_TO_SYS(holiday_GPIO_KEY_VOL_UP),
-                           PM_GPIO_DIR_IN, 0, 0, PM_GPIO_PULL_UP_31P5,
-                           PM8058_GPIO_VIN_S3, 0, PM_GPIO_FUNC_NORMAL, 0, 0),
-          /* Volume Down key */
-          PM8XXX_GPIO_INIT(PM8058_GPIO_PM_TO_SYS(holiday_GPIO_KEY_VOL_DOWN),
-                           PM_GPIO_DIR_IN, 0, 0, PM_GPIO_PULL_UP_1P5,
+          PM8XXX_GPIO_INIT(PM8058_GPIO_PM_TO_SYS(6),
+                           PM_GPIO_DIR_IN, 0, 0, PM_GPIO_PULL_DN,
                            2, 0, PM_GPIO_FUNC_NORMAL, 0, 0),
-           /* PMIC ID interrupt */
-          PM8XXX_GPIO_INIT(PM8058_GPIO_PM_TO_SYS(holiday_AUD_REMO_PRES),
-                           PM_GPIO_DIR_IN, 0, 0, PM_GPIO_PULL_UP_1P5,
-                           PM8058_GPIO_VIN_L5, 0, PM_GPIO_FUNC_NORMAL, 0, 0),
+          PM8XXX_GPIO_INIT(PM8058_GPIO_PM_TO_SYS(UI_INT1_N),
+                           PM_GPIO_DIR_IN, 0, 0, PM_GPIO_PULL_NO,
+                           2, 0, PM_GPIO_FUNC_NORMAL, 0, 0),
+          PM8XXX_GPIO_INIT(PM8058_GPIO_PM_TO_SYS(UI_INT3_N),
+                           PM_GPIO_DIR_IN, 0, 0, PM_GPIO_PULL_NO,
+                           2, 0, PM_GPIO_FUNC_NORMAL, 0, 0),
+          PM8XXX_GPIO_INIT(PM8058_GPIO_PM_TO_SYS(5),
+                           PM_GPIO_DIR_IN, 0, 0, PM_GPIO_PULL_NO,
+                           2, 0, PM_GPIO_FUNC_NORMAL, 0, 0),
+          PM8XXX_GPIO_INIT(PM8058_GPIO_PM_TO_SYS(24),
+                           PM_GPIO_DIR_IN, 0, 0, PM_GPIO_PULL_NO,
+                           2, 0, PM_GPIO_FUNC_NORMAL, 0, 0),
+#ifdef CONFIG_MSM8X60_AUDIO_1X
+          /* Audio Microphone Selector*/
+          PM8XXX_GPIO_INIT(PM8058_GPIO_PM_TO_SYS(HOLIDAY_AUD_MIC_SEL),    /* 26 */
+                           PM_GPIO_DIR_OUT, PM_GPIO_OUT_BUF_CMOS, 0, PM_GPIO_PULL_NO,
+                           6, PM_GPIO_STRENGTH_HIGH, PM_GPIO_FUNC_NORMAL, 0, 0),
+          /* Audio Receiver Amplifier */
+          PM8XXX_GPIO_INIT(PM8058_GPIO_PM_TO_SYS(HOLIDAY_AUD_HANDSET_ENO),
+                           PM_GPIO_DIR_OUT, PM_GPIO_OUT_BUF_CMOS, 0, PM_GPIO_PULL_NO,
+                           PM8058_GPIO_VIN_L7, PM_GPIO_STRENGTH_HIGH, PM_GPIO_FUNC_NORMAL, 0, 0),
+#endif
+          /* CamCoder Key */
+          PM8XXX_GPIO_INIT(PM8058_GPIO_PM_TO_SYS(HOLIDAY_GPIO_KEY_CAMCODER),
+                           PM_GPIO_DIR_IN, 0, 1, PM_GPIO_PULL_UP_31P5,
+                           PM8058_GPIO_VIN_S3, 0, PM_GPIO_FUNC_NORMAL, 0, 0),
+          /* Cam AutoFocus key */
+          PM8XXX_GPIO_INIT(PM8058_GPIO_PM_TO_SYS(HOLIDAY_GPIO_KEY_CAMAF),
+                           PM_GPIO_DIR_IN, 0, 1, PM_GPIO_PULL_UP_1P5,
+                           2, 0, PM_GPIO_FUNC_NORMAL, 0, 0),
+          /* Leds */
+          PM8XXX_GPIO_INIT(PM8058_GPIO_PM_TO_SYS(HOLIDAY_LED_3V3),
+                           PM_GPIO_DIR_OUT, PM_GPIO_OUT_BUF_CMOS, 1, PM_GPIO_PULL_NO,
+                           PM8058_GPIO_VIN_L5, PM_GPIO_STRENGTH_HIGH, PM_GPIO_FUNC_NORMAL, 0, 0),
 	};
 
 	for (i = 0; i < ARRAY_SIZE(gpio_cfgs); ++i) {
@@ -373,12 +368,12 @@ void __init holiday_gpio_mpp_init(void)
 			break ;
 		}
 	}
-        holiday_pm8901_gpio_mpp_init();
+	holiday_pm8901_gpio_mpp_init();
 }
 
 static struct pm8xxx_vibrator_platform_data pm8058_vib_pdata = {
 	.initial_vibrate_ms  = 0,
-        .level_mV = 3000,
+	.level_mV = 2500,
 	.max_timeout_ms = 15000,
 };
 
@@ -393,7 +388,7 @@ static struct pm8xxx_rtc_platform_data pm8058_rtc_pdata = {
 
 static struct pm8xxx_pwrkey_platform_data pm8058_pwrkey_pdata = {
 	.pull_up		= 1,
-	.kpd_trigger_delay_us   = 15625,
+	.kpd_trigger_delay_us	= 970,
 	.wakeup			= 1,
 };
 
@@ -509,7 +504,7 @@ static struct pm8058_platform_data pm8058_platform_data = {
 	.pwrkey_pdata		= &pm8058_pwrkey_pdata,
 	.othc0_pdata		= &othc_config_pdata_0,
 	.othc1_pdata		= &othc_config_pdata_1,
-	.othc2_pdata		= &othc_config_pdata_2,
+	.othc2_pdata		= NULL,
 	.pwm_pdata		= &pm8058_pwm_data,
 	.misc_pdata		= &pm8058_misc_pdata,
 #ifdef CONFIG_SENSORS_MSM_ADC
@@ -572,20 +567,20 @@ static struct adc_access_fn xoadc_fn = {
 };
 
 static struct msm_adc_channels msm_adc_channels_data[] = {
-	{"vbatt", CHANNEL_ADC_VBATT, 0, &xoadc_fn, CHAN_PATH_TYPE_NONE,
+	{"vbatt", CHANNEL_ADC_VBATT, 0, &xoadc_fn, CHAN_PATH_TYPE2,
 		ADC_CONFIG_TYPE2, ADC_CALIB_CONFIG_TYPE3, scale_default},
-	{"vcoin", CHANNEL_ADC_VCOIN, 0, &xoadc_fn, CHAN_PATH_TYPE_NONE,
+	{"vcoin", CHANNEL_ADC_VCOIN, 0, &xoadc_fn, CHAN_PATH_TYPE1,
 		ADC_CONFIG_TYPE2, ADC_CALIB_CONFIG_TYPE2, scale_default},
-	{"vcharger_channel", CHANNEL_ADC_VCHG, 0, &xoadc_fn, CHAN_PATH_TYPE13,
+	{"vcharger_channel", CHANNEL_ADC_VCHG, 0, &xoadc_fn, CHAN_PATH_TYPE3,
 		ADC_CONFIG_TYPE2, ADC_CALIB_CONFIG_TYPE4, scale_default},
 	{"charger_current_monitor", CHANNEL_ADC_CHG_MONITOR, 0, &xoadc_fn,
-		CHAN_PATH_TYPE_NONE,
+		CHAN_PATH_TYPE4,
 		ADC_CONFIG_TYPE2, ADC_CALIB_CONFIG_TYPE1, scale_default},
-	{"vph_pwr", CHANNEL_ADC_VPH_PWR, 0, &xoadc_fn, CHAN_PATH_TYPE_NONE,
+	{"vph_pwr", CHANNEL_ADC_VPH_PWR, 0, &xoadc_fn, CHAN_PATH_TYPE5,
 		ADC_CONFIG_TYPE2, ADC_CALIB_CONFIG_TYPE3, scale_default},
-	{"usb_vbus", CHANNEL_ADC_USB_VBUS, 0, &xoadc_fn, CHAN_PATH_TYPE_NONE,
+	{"usb_vbus", CHANNEL_ADC_USB_VBUS, 0, &xoadc_fn, CHAN_PATH_TYPE11,
 		ADC_CONFIG_TYPE2, ADC_CALIB_CONFIG_TYPE3, scale_default},
-	{"pmic_therm", CHANNEL_ADC_DIE_TEMP, 0, &xoadc_fn, CHAN_PATH_TYPE_NONE,
+	{"pmic_therm", CHANNEL_ADC_DIE_TEMP, 0, &xoadc_fn, CHAN_PATH_TYPE12,
 		ADC_CONFIG_TYPE2, ADC_CALIB_CONFIG_TYPE1, scale_pmic_therm},
 	{"pmic_therm_4K", CHANNEL_ADC_DIE_TEMP_4K, 0, &xoadc_fn,
 		CHAN_PATH_TYPE12,
@@ -597,14 +592,14 @@ static struct msm_adc_channels msm_adc_channels_data[] = {
 		ADC_CONFIG_TYPE1, ADC_CALIB_CONFIG_TYPE6, tdkntcgtherm},
 	{"hdset_detect", CHANNEL_ADC_HDSET, 0, &xoadc_fn, CHAN_PATH_TYPE6,
 		ADC_CONFIG_TYPE2, ADC_CALIB_CONFIG_TYPE1, scale_default},
-	{"chg_batt_amon", CHANNEL_ADC_BATT_AMON, 0, &xoadc_fn, CHAN_PATH_TYPE7,
+	{"chg_batt_amon", CHANNEL_ADC_BATT_AMON, 0, &xoadc_fn, CHAN_PATH_TYPE10,
 		ADC_CONFIG_TYPE2, ADC_CALIB_CONFIG_TYPE1,
-		scale_default},
+		scale_xtern_chgr_cur},
 	{"msm_therm", CHANNEL_ADC_MSM_THERM, 0, &xoadc_fn, CHAN_PATH_TYPE8,
 		ADC_CONFIG_TYPE2, ADC_CALIB_CONFIG_TYPE2, scale_msm_therm},
-	{"batt_therm", CHANNEL_ADC_BATT_THERM, 0, &xoadc_fn, CHAN_PATH_TYPE6,
-		ADC_CONFIG_TYPE2, ADC_CALIB_CONFIG_TYPE2, scale_default},
-	{"batt_id", CHANNEL_ADC_BATT_ID, 0, &xoadc_fn, CHAN_PATH_TYPE_NONE,
+	{"batt_therm", CHANNEL_ADC_BATT_THERM, 0, &xoadc_fn, CHAN_PATH_TYPE7,
+		ADC_CONFIG_TYPE2, ADC_CALIB_CONFIG_TYPE2, scale_batt_therm},
+	{"batt_id", CHANNEL_ADC_BATT_ID, 0, &xoadc_fn, CHAN_PATH_TYPE9,
 		ADC_CONFIG_TYPE2, ADC_CALIB_CONFIG_TYPE2, scale_default},
 	{"ref_625mv", CHANNEL_ADC_625_REF, 0, &xoadc_fn, CHAN_PATH_TYPE15,
 		ADC_CONFIG_TYPE2, ADC_CALIB_CONFIG_TYPE2, scale_default},
@@ -628,6 +623,70 @@ struct platform_device msm_adc_device = {
 	},
 };
 #endif
+
+void holiday_headset_pmic_init(void)
+{
+	int i;
+	int rc;
+
+	struct pm8058_gpio_cfg {
+		int                gpio;
+		struct pm_gpio cfg;
+	};
+
+	struct pm8058_gpio_cfg gpio_cfgs[] = {
+		{
+			PM8058_GPIO_PM_TO_SYS(HOLIDAY_H2W_CABLE_IN1),
+			{
+				.direction      = PM_GPIO_DIR_IN,
+				.pull           = PM_GPIO_PULL_NO,
+				.vin_sel        = PM8058_GPIO_VIN_S3,
+				.function       = PM_GPIO_FUNC_NORMAL,
+				.inv_int_pol    = 0,
+			},
+		},
+		{
+			PM8058_GPIO_PM_TO_SYS(HOLIDAY_H2W_CABLE_IN2),
+			{
+				.direction      = PM_GPIO_DIR_IN,
+				.pull           = PM_GPIO_PULL_NO,
+				.vin_sel        = PM8058_GPIO_VIN_S3,
+				.function       = PM_GPIO_FUNC_NORMAL,
+				.inv_int_pol    = 0,
+			},
+		},
+		{
+			PM8058_GPIO_PM_TO_SYS(HOLIDAY_H2W_IO1_CLK),
+			{
+				.direction      = PM_GPIO_DIR_IN,
+				.pull           = PM_GPIO_PULL_NO,
+				.vin_sel        = PM8058_GPIO_VIN_S3,
+				.function       = PM_GPIO_FUNC_NORMAL,
+				.inv_int_pol    = 0,
+			},
+		},
+		{
+			PM8058_GPIO_PM_TO_SYS(HOLIDAY_H2W_IO2_DAT),
+			{
+				.direction      = PM_GPIO_DIR_IN,
+				.pull           = PM_GPIO_PULL_NO,
+				.vin_sel        = PM8058_GPIO_VIN_S3,
+				.function       = PM_GPIO_FUNC_NORMAL,
+				.inv_int_pol    = 0,
+			},
+		},
+	};
+
+	pr_info("[HS_BOARD] (%s) H2W GPIO configuration\n", __func__);
+
+	for (i = 0; i < ARRAY_SIZE(gpio_cfgs); ++i) {
+		rc = pm8xxx_gpio_config(gpio_cfgs[i].gpio,
+				&gpio_cfgs[i].cfg);
+		if (rc < 0)
+			pr_info("[HS_BOARD] (%s) PMIC GPIO config failed\n",
+				__func__);
+	}
+}
 
 void __init holiday_init_pmic(void)
 {

@@ -1,6 +1,6 @@
 /*
  * Copyright (C) 2009 Google, Inc.
- * Copyright (C) 2009 HTC Corporation.
+ * Copyright (C) 2009-2011 HTC Corporation.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -21,12 +21,10 @@
 #include <linux/gpio.h>
 #include <asm/mach-types.h>
 
-#include <mach/htc_sleep_clk.h>
-
 #include "board-holiday.h"
 
 static struct rfkill *bt_rfk;
-static const char bt_name[] = "bcm4330";
+static const char bt_name[] = "ti1273L";
 
 /* bt on configuration */
 static uint32_t holiday_bt_on_table[] = {
@@ -56,31 +54,13 @@ static uint32_t holiday_bt_on_table[] = {
 				GPIO_CFG_NO_PULL,
 				GPIO_CFG_8MA),
 
-	/* BT_HOST_WAKE */
-	GPIO_CFG(HOLIDAY_GPIO_BT_HOST_WAKE,
-				0,
-				GPIO_CFG_INPUT,
-				GPIO_CFG_NO_PULL,
-				GPIO_CFG_4MA),
-	/* BT_CHIP_WAKE */
-	GPIO_CFG(HOLIDAY_GPIO_BT_CHIP_WAKE,
+	/* BT_EN */
+	GPIO_CFG(HOLIDAY_GPIO_BT_EN,
 				0,
 				GPIO_CFG_OUTPUT,
 				GPIO_CFG_NO_PULL,
 				GPIO_CFG_4MA),
 
-	/* BT_RESET_N */
-	GPIO_CFG(HOLIDAY_GPIO_BT_RESET_N,
-				0,
-				GPIO_CFG_OUTPUT,
-				GPIO_CFG_NO_PULL,
-				GPIO_CFG_4MA),
-	/* BT_SHUTDOWN_N */
-	GPIO_CFG(HOLIDAY_GPIO_BT_SHUTDOWN_N,
-				0,
-				GPIO_CFG_OUTPUT,
-				GPIO_CFG_NO_PULL,
-				GPIO_CFG_4MA),
 };
 
 /* bt off configuration */
@@ -111,31 +91,13 @@ static uint32_t holiday_bt_off_table[] = {
 				GPIO_CFG_NO_PULL,
 				GPIO_CFG_8MA),
 
-	/* BT_RESET_N */
-	GPIO_CFG(HOLIDAY_GPIO_BT_RESET_N,
-				0,
-				GPIO_CFG_OUTPUT,
-				GPIO_CFG_NO_PULL,
-				GPIO_CFG_4MA),
-	/* BT_SHUTDOWN_N */
-	GPIO_CFG(HOLIDAY_GPIO_BT_SHUTDOWN_N,
+	/* BT_EN */
+	GPIO_CFG(HOLIDAY_GPIO_BT_EN,
 				0,
 				GPIO_CFG_OUTPUT,
 				GPIO_CFG_NO_PULL,
 				GPIO_CFG_4MA),
 
-	/* BT_HOST_WAKE */
-	GPIO_CFG(HOLIDAY_GPIO_BT_HOST_WAKE,
-				0,
-				GPIO_CFG_INPUT,
-				GPIO_CFG_PULL_DOWN,
-				GPIO_CFG_4MA),
-	/* BT_CHIP_WAKE */
-	GPIO_CFG(HOLIDAY_GPIO_BT_CHIP_WAKE,
-				0,
-				GPIO_CFG_OUTPUT,
-				GPIO_CFG_NO_PULL,
-				GPIO_CFG_4MA),
 };
 
 static void config_bt_table(uint32_t *table, int len)
@@ -153,63 +115,43 @@ static void config_bt_table(uint32_t *table, int len)
 
 static void holiday_config_bt_on(void)
 {
-	printk(KERN_INFO "[BT]-- R ON --\n");
-
 	/* set bt on configuration*/
 	config_bt_table(holiday_bt_on_table,
 				ARRAY_SIZE(holiday_bt_on_table));
-	mdelay(2);
+	mdelay(4);
 
-	/* BT_RESET_N */
-	gpio_set_value(HOLIDAY_GPIO_BT_RESET_N, 0);
-	mdelay(1);
+	gpio_set_value(HOLIDAY_GPIO_BT_EN, 0);
+	mdelay(4);
 
-	/* BT_SHUTDOWN_N */
-	gpio_set_value(HOLIDAY_GPIO_BT_SHUTDOWN_N, 0);
-	mdelay(5);
-
-	/* BT_SHUTDOWN_N */
-	gpio_set_value(HOLIDAY_GPIO_BT_SHUTDOWN_N, 1);
-	mdelay(1);
-
-	/* BT_RESET_N */
-	gpio_set_value(HOLIDAY_GPIO_BT_RESET_N, 1);
-	mdelay(2);
+	/* BT_EN */
+	gpio_set_value(HOLIDAY_GPIO_BT_EN, 1);
+	/* mdelay(200); */
 
 }
 
 static void holiday_config_bt_off(void)
 {
-	/* BT_RESET_N */
-	gpio_set_value(HOLIDAY_GPIO_BT_RESET_N, 0);
-	mdelay(1);
-
-	/* BT_SHUTDOWN_N */
-	gpio_set_value(HOLIDAY_GPIO_BT_SHUTDOWN_N, 0);
-	mdelay(1);
+	/* BT_EN */
+	gpio_set_value(HOLIDAY_GPIO_BT_EN, 0);
+	mdelay(4);
 
 	/* set bt off configuration*/
 	config_bt_table(holiday_bt_off_table,
 				ARRAY_SIZE(holiday_bt_off_table));
-	mdelay(2);
+	mdelay(4);
 
 	/* BT_RTS */
-	gpio_set_value(HOLIDAY_GPIO_BT_UART1_RTS, 0);
+	gpio_set_value(HOLIDAY_GPIO_BT_UART1_RTS, 1);
 
+	mdelay(4);
 	/* BT_CTS */
 
 	/* BT_TX */
-	gpio_set_value(HOLIDAY_GPIO_BT_UART1_TX, 0);
+	gpio_set_value(HOLIDAY_GPIO_BT_UART1_TX, 1);
 
+	mdelay(4);
 	/* BT_RX */
 
-
-	/* BT_HOST_WAKE */
-
-	/* BT_CHIP_WAKE */
-	gpio_set_value(HOLIDAY_GPIO_BT_CHIP_WAKE, 0);
-
-	printk(KERN_INFO "[BT]-- R OFF --\n");
 }
 
 static int bluetooth_set_power(void *data, bool blocked)
@@ -218,6 +160,17 @@ static int bluetooth_set_power(void *data, bool blocked)
 		holiday_config_bt_on();
 	else
 		holiday_config_bt_off();
+
+	return 0;
+}
+
+/* Export an interface for the other drivers */
+int holiday_bluetooth_set_power(int on)
+{
+	if (on)
+		bluetooth_set_power(NULL, false);
+	else
+		bluetooth_set_power(NULL, true);
 
 	return 0;
 }
@@ -231,14 +184,9 @@ static int holiday_rfkill_probe(struct platform_device *pdev)
 	int rc = 0;
 	bool default_state = true;  /* off */
 
-#if 0 /* Is this necessary? */
-	rc = gpio_request(HOLIDAY_GPIO_BT_RESET_N, "bt_reset");
+	rc = gpio_request(HOLIDAY_GPIO_BT_EN, "bt_en");
 	if (rc)
-		goto err_gpio_reset;
-	rc = gpio_request(HOLIDAY_GPIO_BT_SHUTDOWN_N, "bt_shutdown");
-	if (rc)
-		goto err_gpio_shutdown;
-#endif
+		goto err_gpio_en;
 
 	bluetooth_set_power(NULL, default_state);
 
@@ -262,12 +210,8 @@ static int holiday_rfkill_probe(struct platform_device *pdev)
 err_rfkill_reg:
 	rfkill_destroy(bt_rfk);
 err_rfkill_alloc:
-#if 0
-	gpio_free(HOLIDAY_GPIO_BT_SHUTDOWN_N);
-err_gpio_shutdown:
-	gpio_free(HOLIDAY_GPIO_BT_RESET_N);
-err_gpio_reset:
-#endif
+	gpio_free(HOLIDAY_GPIO_BT_EN);
+err_gpio_en:
 	return rc;
 }
 
@@ -275,10 +219,7 @@ static int holiday_rfkill_remove(struct platform_device *dev)
 {
 	rfkill_unregister(bt_rfk);
 	rfkill_destroy(bt_rfk);
-#if 0
-	gpio_free(HOLIDAY_GPIO_BT_SHUTDOWN_N);
-	gpio_free(HOLIDAY_GPIO_BT_RESET_N);
-#endif
+	gpio_free(HOLIDAY_GPIO_BT_EN);
 
 	return 0;
 }
@@ -308,5 +249,5 @@ static void __exit holiday_rfkill_exit(void)
 module_init(holiday_rfkill_init);
 module_exit(holiday_rfkill_exit);
 MODULE_DESCRIPTION("holiday rfkill");
-MODULE_AUTHOR("Nick Pelly <npelly@google.com>");
+MODULE_AUTHOR("htc_ssdbt <htc_ssdbt@htc.com>");
 MODULE_LICENSE("GPL");
