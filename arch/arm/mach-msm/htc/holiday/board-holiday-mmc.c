@@ -1,4 +1,4 @@
-/* linux/arch/arm/mach-msm/board-holiday-mmc.c
+/* linux/arch/arm/mach-msm/board-pyramid-mmc.c
  *
  * Copyright (C) 2008 HTC Corporation.
  *
@@ -11,7 +11,6 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  */
-
 #include <linux/kernel.h>
 #include <linux/init.h>
 #include <linux/platform_device.h>
@@ -21,6 +20,7 @@
 #include <linux/err.h>
 #include <linux/debugfs.h>
 #include <linux/gpio.h>
+#include <linux/module.h>
 
 #include <asm/gpio.h>
 #include <asm/io.h>
@@ -29,59 +29,36 @@
 #include <mach/htc_pwrsink.h>
 
 #include <asm/mach/mmc.h>
+#include <mach/msm_iomap.h>
+#include <linux/mfd/pmic8058.h>
 
 #include "devices.h"
 #include "board-holiday.h"
-#include "proc_comm.h"
-#include <mach/msm_iomap.h>
-#include <linux/mfd/pmic8058.h>
-#include <mach/htc_sleep_clk.h>
-#include "mpm.h"
+#include <mach/proc_comm.h>
+#include "board-common-wimax.h"
+#include <mach/mpm.h>
+
+#ifdef CONFIG_WIMAX_SERIAL_MSM
+#include <mach/msm_serial_wimax.h>
 #include <linux/irq.h>
 
-#if 0
-static int msm_sdcc_cfg_mpm_sdiowakeup(struct device *dev, unsigned mode)
-{
-	   struct platform_device *pdev;
-	   enum msm_mpm_pin pin;
-		int ret = 0;
-
-	   pdev = container_of(dev, struct platform_device, dev);
-
-	   /* Only SDCC4 slot connected to WLAN chip has wakeup capability */
-	   if (pdev->id == 4)
-			   pin = MSM_MPM_PIN_SDC4_DAT1;
-	   else
-			   return -EINVAL;
-
-		switch (mode) {
-		case SDC_DAT1_DISABLE:
-				ret = msm_mpm_enable_pin(pin, 0);
-				break;
-		case SDC_DAT1_ENABLE:
-				ret = msm_mpm_set_pin_type(pin, IRQ_TYPE_LEVEL_LOW);
-				ret = msm_mpm_enable_pin(pin, 1);
-				break;
-		case SDC_DAT1_ENWAKE:
-				ret = msm_mpm_set_pin_wake(pin, 1);
-				break;
-		case SDC_DAT1_DISWAKE:
-				ret = msm_mpm_set_pin_wake(pin, 0);
-				break;
-		default:
-				ret = -EINVAL;
-				break;
-		}
-		return ret;
-}
+#define MSM_GSBI3_PHYS		0x16200000
+#define MSM_UART3_PHYS 		(MSM_GSBI3_PHYS + 0x40000)
+#define INT_UART3_IRQ		GSBI3_UARTDM_IRQ
 #endif
+
+#include <linux/irq.h>
+
+#include <mach/rpm.h>
+#include <mach/rpm-regulator.h>
+
+#include "rpm_resources.h"
 
 int msm_proc_comm(unsigned cmd, unsigned *data1, unsigned *data2);
 
-extern int msm_add_sdcc(unsigned int controller, struct mmc_platform_data *plat);
-
-/* ---- SDCARD ---- */
-/* ---- WIFI ---- */
+#define PM8058_GPIO_BASE			NR_MSM_GPIOS
+#define PM8058_GPIO_PM_TO_SYS(pm_gpio)		(pm_gpio + PM8058_GPIO_BASE)
+#define PM8058_GPIO_SYS_TO_PM(sys_gpio)		(sys_gpio - PM8058_GPIO_BASE)
 
 static uint32_t wifi_on_gpio_table[] = {
 	GPIO_CFG(HOLIDAY_GPIO_WIFI_IRQ, 0, GPIO_CFG_INPUT, GPIO_CFG_NO_PULL, GPIO_CFG_4MA), /* WLAN IRQ */
@@ -93,29 +70,26 @@ static uint32_t wifi_off_gpio_table[] = {
 
 static void config_gpio_table(uint32_t *table, int len)
 {
-		int n, rc;
-		for (n = 0; n < len; n++) {
-				rc = gpio_tlmm_config(table[n], GPIO_CFG_ENABLE);
-				if (rc) {
-						pr_err("%s: gpio_tlmm_config(%#x)=%d\n",
-								__func__, table[n], rc);
-						break;
-				}
+	int n, rc;
+	for (n = 0; n < len; n++) {
+		rc = gpio_tlmm_config(table[n], GPIO_CFG_ENABLE);
+		if (rc) {
+			pr_err("%s: gpio_tlmm_config(%#x)=%d\n",
+				__func__, table[n], rc);
+			break;
 		}
+	}
 }
 
-/* BCM4329 returns wrong sdio_vsn(1) when we read cccr,
- * we use predefined value (sdio_vsn=2) here to initial sdio driver well
- */
 static struct embedded_sdio_data holiday_wifi_emb_data = {
-	.cccr	= {
-		.sdio_vsn	= 2,
+	.cccr   = {
 		.multi_block	= 1,
 		.low_speed	= 0,
-		.wide_bus	= 0,
-		.high_power	= 1,
-		.high_speed	= 1,
-	}
+		.wide_bus	= 1,
+		.high_power	= 0,
+		.high_speed	= 0,
+		.disable_cd	= 1,
+	},
 };
 
 static void (*wifi_status_cb)(int card_present, void *dev_id);
@@ -140,26 +114,23 @@ static unsigned int holiday_wifi_status(struct device *dev)
 	return holiday_wifi_cd;
 }
 
-static unsigned int holiday_wifislot_type = MMC_TYPE_SDIO_WIFI;
-static struct mmc_platform_data holiday_wifi_data = {
-		.ocr_mask			   = MMC_VDD_35_36,
-		.status				 = holiday_wifi_status,
-		.register_status_notify = holiday_wifi_status_register,
-		.embedded_sdio		  = &holiday_wifi_emb_data,
-		.mmc_bus_width  = MMC_CAP_4_BIT_DATA,
-		.slot_type = &holiday_wifislot_type,
-		.msmsdcc_fmin   = 400000,
-		.msmsdcc_fmid   = 24000000,
-		.msmsdcc_fmax   = 48000000,
-		.nonremovable   = 0,
-	.pclk_src_dfab	= 1,
-	/*
-	//.cfg_mpm_sdiowakeup = msm_sdcc_cfg_mpm_sdiowakeup,
-	// HTC_WIFI_MOD, temp remove dummy52
-	//.dummy52_required = 1,
-	*/
-};
+void holiday_remove_wifi(int id, struct mmc_host *mmc);
+void holiday_probe_wifi(int id, struct mmc_host *mmc);
 
+static struct mmc_platform_data holiday_wifi_data = {
+	.ocr_mask	= MMC_VDD_165_195,
+	.status		= holiday_wifi_status,
+	.register_status_notify	= holiday_wifi_status_register,
+	.embedded_sdio	= &holiday_wifi_emb_data,
+	.mmc_bus_width	= MMC_CAP_4_BIT_DATA,
+	.msmsdcc_fmin   = 400000,
+	.msmsdcc_fmid   = 24000000,
+	.msmsdcc_fmax   = 48000000,
+	.board_probe	= holiday_probe_wifi,
+	.board_remove	= holiday_remove_wifi,
+	.nonremovable	= 1,
+	//.is_ti_wifi	= 1,
+};
 
 int holiday_wifi_set_carddetect(int val)
 {
@@ -173,31 +144,29 @@ int holiday_wifi_set_carddetect(int val)
 }
 EXPORT_SYMBOL(holiday_wifi_set_carddetect);
 
-int holiday_wifi_power(int on)
+int ti_wifi_power(int on)
 {
 	const unsigned SDC4_HDRV_PULL_CTL_ADDR = (unsigned) MSM_TLMM_BASE + 0x20A0;
 
 	printk(KERN_INFO "%s: %d\n", __func__, on);
 
 	if (on) {
-		/* SDC4_CMD_PULL = Pull Up, SDC4_DATA_PULL = Pull up */
 		writel(0x1FDB, SDC4_HDRV_PULL_CTL_ADDR);
 		config_gpio_table(wifi_on_gpio_table,
 				  ARRAY_SIZE(wifi_on_gpio_table));
 	} else {
-		/* SDC4_CMD_PULL = Pull Down, SDC4_DATA_PULL = Pull Down */
 		writel(0x0BDB, SDC4_HDRV_PULL_CTL_ADDR);
 		config_gpio_table(wifi_off_gpio_table,
 				  ARRAY_SIZE(wifi_off_gpio_table));
 	}
-
-	mdelay(1);	/* Delay 1 ms, Recommand by Hardware */
-	gpio_set_value(HOLIDAY_GPIO_WIFI_SHUTDOWN_N, on); /* WIFI_SHUTDOWN */
+	
+	mdelay(1);
+	gpio_set_value(HOLIDAY_GPIO_WIFI_SHUTDOWN_N, on);
 
 	mdelay(120);
 	return 0;
 }
-EXPORT_SYMBOL(holiday_wifi_power);
+EXPORT_SYMBOL(ti_wifi_power);
 
 int holiday_wifi_reset(int on)
 {
@@ -205,19 +174,71 @@ int holiday_wifi_reset(int on)
 	return 0;
 }
 
-int __init holiday_init_wifi_mmc(void)
+static struct mmc_host *wifi_mmc;
+int board_sdio_wifi_enable(unsigned int param);
+int board_sdio_wifi_disable(unsigned int param);
+
+void holiday_probe_wifi(int id, struct mmc_host *mmc)
+{
+	printk("%s: id %d mmc %p\n", __PRETTY_FUNCTION__, id, mmc);
+	wifi_mmc = mmc;
+}
+
+void holiday_remove_wifi(int id, struct mmc_host *mmc)
+{
+	printk("%s: id %d mmc %p\n", __PRETTY_FUNCTION__, id, mmc);
+	wifi_mmc = NULL;
+}
+
+/*
+ *  An API to enable wifi
+ */
+int board_sdio_wifi_enable(unsigned int param)
+{
+	printk(KERN_ERR "board_sdio_wifi_enable\n");
+
+	ti_wifi_power(1);
+	if (wifi_mmc) {
+		mmc_detect_change(wifi_mmc, msecs_to_jiffies(250));
+	}
+
+	return 0;
+}
+EXPORT_SYMBOL(board_sdio_wifi_enable);
+
+/*
+ *  An API to disable wifi
+ */
+int board_sdio_wifi_disable(unsigned int param)
+{
+	printk(KERN_ERR "board_sdio_wifi_disable\n");
+
+	ti_wifi_power(0);
+
+	if (wifi_mmc) {
+		mmc_detect_change(wifi_mmc, msecs_to_jiffies(100));
+	}
+
+	return 0;
+}
+EXPORT_SYMBOL(board_sdio_wifi_disable);
+
+int __init holiday_init_wifi_mmc()
 {
 	uint32_t id;
-	wifi_status_cb = NULL;
+	const unsigned SDC4_HDRV_PULL_CTL_ADDR = (unsigned)(MSM_TLMM_BASE + 0x20A0);
 
 	printk(KERN_INFO "holiday: %s\n", __func__);
 
 	/* initial WIFI_SHUTDOWN# */
 	id = GPIO_CFG(HOLIDAY_GPIO_WIFI_SHUTDOWN_N, 0, GPIO_CFG_OUTPUT,
 		GPIO_CFG_NO_PULL, GPIO_CFG_2MA);
+
+	/*WIFI:Per HW request,we need pull up wlan SDCC4 DATA/CMD pin when initial to prevent power leakage issue*/
+	writel(0x1FDB, SDC4_HDRV_PULL_CTL_ADDR);
+
 	gpio_tlmm_config(id, 0);
 	gpio_set_value(HOLIDAY_GPIO_WIFI_SHUTDOWN_N, 0);
-
 	msm_add_sdcc(4, &holiday_wifi_data);
 
 	return 0;
