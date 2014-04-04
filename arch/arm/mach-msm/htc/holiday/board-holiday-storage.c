@@ -11,6 +11,11 @@
 #include "board-holiday.h"
 #include "board-storage-common-a.h"
 
+#define MDM2AP_SYNC 129
+
+#define PM8901_GPIO_BASE (PM8058_GPIO_BASE + \
+				PM8058_GPIOS + PM8058_MPPS)
+
 static void config_gpio_table(uint32_t *table, int len)
 {
 	int n, rc;
@@ -24,9 +29,21 @@ static void config_gpio_table(uint32_t *table, int len)
 	}
 }
 
+#ifdef CONFIG_MMC_MSM_SDC2_SUPPORT
+static void (*sdc2_status_notify_cb)(int card_present, void *dev_id);
+static void *sdc2_status_notify_cb_devid;
+#endif
+
+#ifdef CONFIG_MMC_MSM_SDC5_SUPPORT
+static void (*sdc5_status_notify_cb)(int card_present, void *dev_id);
+static void *sdc5_status_notify_cb_devid;
+#endif
+
 #if (defined(CONFIG_MMC_MSM_SDC1_SUPPORT)\
+	|| defined(CONFIG_MMC_MSM_SDC2_SUPPORT)\
 	|| defined(CONFIG_MMC_MSM_SDC3_SUPPORT)\
-        || defined(CONFIG_MMC_MSM_SDC4_SUPPORT))
+	|| defined(CONFIG_MMC_MSM_SDC4_SUPPORT)\
+	|| defined(CONFIG_MMC_MSM_SDC5_SUPPORT))
 
 #define MAX_SDCC_CONTROLLER	5
 
@@ -71,6 +88,34 @@ static uint32_t sdc1_on_gpio_table[] = {
 };
 #endif
 
+#ifdef CONFIG_MMC_MSM_SDC2_SUPPORT
+static struct msm_sdcc_gpio sdc2_gpio_cfg[] = {
+	{143, "sdc2_dat_0"},
+	{144, "sdc2_dat_1", 1},
+	{145, "sdc2_dat_2"},
+	{146, "sdc2_dat_3"},
+#ifdef CONFIG_MMC_MSM_SDC2_8_BIT_SUPPORT
+	{147, "sdc2_dat_4"},
+	{148, "sdc2_dat_5"},
+	{149, "sdc2_dat_6"},
+	{150, "sdc2_dat_7"},
+#endif
+	{151, "sdc2_cmd"},
+	{152, "sdc2_clk", 1}
+};
+#endif
+
+#ifdef CONFIG_MMC_MSM_SDC5_SUPPORT
+static struct msm_sdcc_gpio sdc5_gpio_cfg[] = {
+	{95, "sdc5_cmd"},
+	{96, "sdc5_dat_3"},
+	{97, "sdc5_clk", 1},
+	{98, "sdc5_dat_2"},
+	{99, "sdc5_dat_1", 1},
+	{100, "sdc5_dat_0"}
+};
+#endif
+
 struct msm_sdcc_pad_pull_cfg {
 	enum msm_tlmm_pull_tgt pull;
 	u32 pull_val;
@@ -83,7 +128,7 @@ struct msm_sdcc_pad_drv_cfg {
 
 #ifdef CONFIG_MMC_MSM_SDC3_SUPPORT
 static struct msm_sdcc_pad_drv_cfg sdc3_pad_on_drv_cfg[] = {
-	{TLMM_HDRV_SDC3_CLK, GPIO_CFG_8MA},
+	{TLMM_HDRV_SDC3_CLK, GPIO_CFG_16MA},
 	{TLMM_HDRV_SDC3_CMD, GPIO_CFG_8MA},
 	{TLMM_HDRV_SDC3_DATA, GPIO_CFG_8MA}
 };
@@ -152,6 +197,13 @@ static struct msm_sdcc_pin_cfg sdcc_pin_cfg_data[MAX_SDCC_CONTROLLER] = {
 		.gpio_data = sdc1_gpio_cfg
 	},
 #endif
+#ifdef CONFIG_MMC_MSM_SDC2_SUPPORT
+	[1] = {
+		.is_gpio = 1,
+		.gpio_data_size = ARRAY_SIZE(sdc2_gpio_cfg),
+		.gpio_data = sdc2_gpio_cfg
+	},
+#endif
 #ifdef CONFIG_MMC_MSM_SDC3_SUPPORT
 	[2] = {
 		.is_gpio = 0,
@@ -173,6 +225,13 @@ static struct msm_sdcc_pin_cfg sdcc_pin_cfg_data[MAX_SDCC_CONTROLLER] = {
 		.pad_drv_data_size = ARRAY_SIZE(sdc4_pad_on_drv_cfg),
 		.pad_pull_data_size = ARRAY_SIZE(sdc4_pad_on_pull_cfg)
 	},
+#endif
+#ifdef CONFIG_MMC_MSM_SDC5_SUPPORT
+	[4] = {
+		.is_gpio = 1,
+		.gpio_data_size = ARRAY_SIZE(sdc5_gpio_cfg),
+		.gpio_data = sdc5_gpio_cfg
+	}
 #endif
 };
 
@@ -555,10 +614,145 @@ setup_vreg:
 
 	return rc;
 }
+
+static void msm_sdcc_sdio_lpm_gpio(struct device *dv, unsigned int active)
+{
+	struct msm_sdcc_pin_cfg *curr_pin_cfg;
+	struct platform_device *pdev;
+
+	pdev = container_of(dv, struct platform_device, dev);
+	
+	curr_pin_cfg = &sdcc_pin_cfg_data[pdev->id - 1];
+
+	if (curr_pin_cfg->cfg_sts == active)
+		return;
+
+	curr_pin_cfg->sdio_lpm_gpio_cfg = 1;
+	if (curr_pin_cfg->is_gpio)
+		msm_sdcc_setup_gpio(pdev->id, active);
+	else
+		msm_sdcc_setup_pad(pdev->id, active);
+	curr_pin_cfg->sdio_lpm_gpio_cfg = 0;
+}
+ 
+#define GPIO_SDC3_WP_SWITCH ((PM8901_GPIO_BASE + PM8901_MPPS) + (16 * 1) + 6)
+static int msm_sdc3_get_wpswitch(struct device *dev)
+{
+	struct platform_device *pdev;
+	int status;
+	pdev = container_of(dev, struct platform_device, dev);
+
+	status = gpio_request(GPIO_SDC3_WP_SWITCH, "SD_WP_Switch");
+	if (status) {
+		pr_err("%s:Failed to request GPIO %d\n",
+					__func__, GPIO_SDC3_WP_SWITCH);
+	} else {
+		status = gpio_direction_input(GPIO_SDC3_WP_SWITCH);
+		if (!status) {
+			status = gpio_get_value_cansleep(GPIO_SDC3_WP_SWITCH);
+			pr_info("%s: WP Status for Slot %d = %d\n",
+				 __func__, pdev->id, status);
+		}
+		gpio_free(GPIO_SDC3_WP_SWITCH);
+	}
+	return status;
+}
+
+#ifdef CONFIG_MMC_MSM_SDC5_SUPPORT
+int sdc5_register_status_notify(void (*callback)(int, void *),
+	void *dev_id)
+{
+	sdc5_status_notify_cb = callback;
+	sdc5_status_notify_cb_devid = dev_id;
+	return 0;
+}
 #endif
 
-#define MSM_MPM_PIN_SDC3_DAT1	21
-#define MSM_MPM_PIN_SDC4_DAT1	23
+#ifdef CONFIG_MMC_MSM_SDC2_SUPPORT
+int sdc2_register_status_notify(void (*callback)(int, void *),
+	void *dev_id)
+{
+	sdc2_status_notify_cb = callback;
+	sdc2_status_notify_cb_devid = dev_id;
+	return 0;
+}
+#endif
+
+static irqreturn_t msm8x60_multi_sdio_slot_status_irq(int irq, void *dev_id)
+{
+	int status;
+
+	status = gpio_get_value(MDM2AP_SYNC);
+	pr_info("%s: MDM2AP_SYNC Status = %d\n",
+		 __func__, status);
+
+#ifdef CONFIG_MMC_MSM_SDC2_SUPPORT
+	if (sdc2_status_notify_cb) {
+		pr_info("%s: calling sdc2_status_notify_cb\n", __func__);
+		sdc2_status_notify_cb(status,
+			sdc2_status_notify_cb_devid);
+	}
+#endif
+
+#ifdef CONFIG_MMC_MSM_SDC5_SUPPORT
+	if (sdc5_status_notify_cb) {
+		pr_info("%s: calling sdc5_status_notify_cb\n", __func__);
+		sdc5_status_notify_cb(status,
+			sdc5_status_notify_cb_devid);
+	}
+#endif
+	return IRQ_HANDLED;
+}
+
+int msm8x60_multi_sdio_init(void)
+{
+	int ret, irq_num;
+
+	ret = msm_gpiomux_get(MDM2AP_SYNC);
+	if (ret) {
+		pr_err("%s:Failed to request GPIO %d, ret=%d\n",
+					__func__, MDM2AP_SYNC, ret);
+		return ret;
+	}
+
+	irq_num = gpio_to_irq(MDM2AP_SYNC);
+
+	ret = request_irq(irq_num,
+		msm8x60_multi_sdio_slot_status_irq,
+		IRQ_TYPE_EDGE_BOTH,
+		"sdio_multidetection", NULL);
+
+	if (ret) {
+		pr_err("%s:Failed to request irq, ret=%d\n",
+					__func__, ret);
+		return ret;
+	}
+
+	return ret;
+}
+
+#ifdef CONFIG_MMC_MSM_SDC3_SUPPORT
+static unsigned int msm8x60_sdcc_slot_status(struct device *dev)
+{
+	int status;
+
+	status = gpio_request(HOLIDAY_SD_DETECT_PIN
+				, "SD_HW_Detect");
+	if (status) {
+		pr_err("%s:Failed to request PMIC GPIO %d\n", __func__,
+				(HOLIDAY_SD_DETECT_PIN + 1));
+	} else {
+		status = gpio_direction_input(
+				HOLIDAY_SD_DETECT_PIN);
+		if (!status)
+			status = !(gpio_get_value_cansleep(
+				HOLIDAY_SD_DETECT_PIN));
+		gpio_free(HOLIDAY_SD_DETECT_PIN);
+	}
+	return (unsigned int) status;
+}
+#endif
+#endif
 
 #ifdef CONFIG_MMC_MSM_SDC1_SUPPORT
 static unsigned int sdc1_sup_clk_rates[] = {
@@ -579,6 +773,31 @@ static struct mmc_platform_data msm8x60_sdc1_data = {
 };
 #endif
 
+#ifdef CONFIG_MMC_MSM_SDC2_SUPPORT
+static unsigned int sdc2_sup_clk_rates[] = {
+	400000, 24000000, 48000000
+};
+
+static struct mmc_platform_data msm8x60_sdc2_data = {
+	.ocr_mask       = MMC_VDD_27_28 | MMC_VDD_28_29 | MMC_VDD_165_195,
+	.translate_vdd  = msm_sdcc_setup_power,
+	.sdio_lpm_gpio_setup = msm_sdcc_sdio_lpm_gpio,
+#ifdef CONFIG_MMC_MSM_SDC2_8_BIT_SUPPORT
+	.mmc_bus_width  = MMC_CAP_8_BIT_DATA,
+#else
+	.mmc_bus_width  = MMC_CAP_4_BIT_DATA,
+#endif
+	.sup_clk_table	= sdc2_sup_clk_rates,
+	.sup_clk_cnt	= ARRAY_SIZE(sdc2_sup_clk_rates),
+	.nonremovable	= 0,
+	.register_status_notify = sdc2_register_status_notify,
+#ifdef CONFIG_MSM_SDIO_AL
+	.is_sdio_al_client = 1,
+#endif
+	.msm_bus_voting_data = &sps_to_ddr_bus_voting_data,
+};
+#endif
+
 #ifdef CONFIG_MMC_MSM_SDC3_SUPPORT
 static unsigned int sdc3_sup_clk_rates[] = {
 	400000, 24000000, 48000000
@@ -589,13 +808,34 @@ static struct mmc_platform_data msm8x60_sdc3_data = {
 	.translate_vdd  = msm_sdcc_setup_power,
 	.mmc_bus_width  = MMC_CAP_4_BIT_DATA,
 	.sup_clk_table	= sdc3_sup_clk_rates,
-	.sup_clk_cnt = ARRAY_SIZE(sdc3_sup_clk_rates),
-	.status_irq  = PM8058_GPIO_IRQ(PM8058_IRQ_BASE,
-				       HOLIDAY_SDC3_DET),
+	.sup_clk_cnt	= ARRAY_SIZE(sdc3_sup_clk_rates),
+	.wpswitch  	= msm_sdc3_get_wpswitch,
+	.status      = msm8x60_sdcc_slot_status,
+	.status_irq  = MSM_GPIO_TO_INT(HOLIDAY_SD_DETECT_PIN),
 	.irq_flags   = IRQF_TRIGGER_RISING | IRQF_TRIGGER_FALLING,
 	.nonremovable	= 0,
-        .mpm_sdiowakeup_int = MSM_MPM_PIN_SDC3_DAT1,
         .msm_bus_voting_data = &sps_to_ddr_bus_voting_data,
+};
+#endif
+
+#ifdef CONFIG_MMC_MSM_SDC5_SUPPORT
+static unsigned int sdc5_sup_clk_rates[] = {
+	400000, 24000000, 48000000
+};
+
+static struct mmc_platform_data msm8x60_sdc5_data = {
+	.ocr_mask       = MMC_VDD_27_28 | MMC_VDD_28_29 | MMC_VDD_165_195,
+	.translate_vdd  = msm_sdcc_setup_power,
+	.sdio_lpm_gpio_setup = msm_sdcc_sdio_lpm_gpio,
+	.mmc_bus_width  = MMC_CAP_4_BIT_DATA,
+	.sup_clk_table	= sdc5_sup_clk_rates,
+	.sup_clk_cnt	= ARRAY_SIZE(sdc5_sup_clk_rates),
+	.nonremovable	= 0,
+	.register_status_notify = sdc5_register_status_notify,
+#ifdef CONFIG_MSM_SDIO_AL
+	.is_sdio_al_client = 1,
+#endif
+	.msm_bus_voting_data = &sps_to_ddr_bus_voting_data,
 };
 #endif
 
@@ -623,6 +863,18 @@ void __init holiday_init_mmc(void)
 	sdcc_vreg_data[0].vccq_data->always_on = 1;
 
 	msm_add_sdcc(1, &msm8x60_sdc1_data);
+#endif
+#ifdef CONFIG_MMC_MSM_SDC2_SUPPORT
+	sdcc_vreg_data[1].vdd_data = &sdcc_vdd_reg_data[1];
+	sdcc_vreg_data[1].vdd_data->reg_name = "8058_s3";
+	sdcc_vreg_data[1].vdd_data->set_voltage_sup = 1;
+	sdcc_vreg_data[1].vdd_data->level = 1800000;
+
+	sdcc_vreg_data[1].vccq_data = NULL;
+
+	msm8x60_sdc2_data.sdiowakeup_irq = gpio_to_irq(144);
+	msm_sdcc_setup_gpio(2, 1);
+	msm_add_sdcc(2, &msm8x60_sdc2_data);
 #endif
 #ifdef CONFIG_MMC_MSM_SDC3_SUPPORT
 	
@@ -652,5 +904,16 @@ void __init holiday_init_mmc(void)
 	if (ret != 0)
 		printk(KERN_ERR "%s: Unable to initialize MMC (SDCC4)\n", __func__);
 #endif
-}
+#ifdef CONFIG_MMC_MSM_SDC5_SUPPORT
+	sdcc_vreg_data[4].vdd_data = &sdcc_vdd_reg_data[4];
+	sdcc_vreg_data[4].vdd_data->reg_name = "8058_s3";
+	sdcc_vreg_data[4].vdd_data->set_voltage_sup = 1;
+	sdcc_vreg_data[4].vdd_data->level = 1800000;
 
+	sdcc_vreg_data[4].vccq_data = NULL;
+
+	msm8x60_sdc5_data.sdiowakeup_irq = gpio_to_irq(99);
+	msm_sdcc_setup_gpio(5, 1);
+	msm_add_sdcc(5, &msm8x60_sdc5_data);
+#endif
+}
