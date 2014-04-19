@@ -311,7 +311,6 @@ static int __init atomic_pool_init(void)
 	pgprot_t prot = pgprot_dmacoherent(PAGE_KERNEL);
 	unsigned long nr_pages = pool->size >> PAGE_SHIFT;
 	unsigned long *bitmap;
-	size_t size = coherent_pool_size;
 	struct page *page;
 	void *ptr;
 	int bitmap_size = BITS_TO_LONGS(nr_pages) * sizeof(long);
