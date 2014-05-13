@@ -34,6 +34,7 @@
 #include <mach/cable_detect.h>
 #endif
 #include <linux/stat.h>
+#include <linux/pl_sensor.h>
 
 #define ATMEL_EN_SYSFS
 #define ATMEL_I2C_RETRY_TIMES 10
@@ -106,6 +107,7 @@ struct atmel_ts_data {
 	uint8_t noisethr;
 	uint8_t noisethr_config;
 	uint8_t diag_command;
+	uint8_t psensor_status;
 	uint8_t *ATCH_EXT;
 	int pre_data[11];
 #ifdef ATMEL_EN_SYSFS
@@ -999,7 +1001,9 @@ static void msg_process_multitouch(struct atmel_ts_data *ts, uint8_t *data, uint
 			if (ts->id->version >= 0x20 && ts->pre_data[0] < RECALIB_DONE) {
 				if (ts->finger_count == 0) {
 					if (ts->pre_data[0] == RECALIB_NEED &&
-						!ts->unlock_attr && idx == 0) {
+						!ts->unlock_attr && idx == 0 &&
+						ts->finger_data[idx].y > 750 &&
+						ts->finger_data[idx].y - ts->pre_data[idx+1] > 135) {
 							restore_normal_threshold(ts);
 							confirm_calibration(ts, 1, 0);
 					} else if (ts->pre_data[0] == RECALIB_UNLOCK &&
@@ -1166,6 +1170,7 @@ static void compatible_input_report(uint8_t report_both, struct input_dev *idev,
 		}
 		input_mt_sync(idev);
 	} else {
+  if  (scr_suspended == false) {
 		if (report_both == REPORT_BOTH_DATA) {
 			input_report_abs(idev, ABS_MT_AMPLITUDE, fdata->z << 16 | fdata->w);
 			input_report_abs(idev, ABS_MT_POSITION,
@@ -1177,19 +1182,22 @@ static void compatible_input_report(uint8_t report_both, struct input_dev *idev,
 		input_report_abs(idev, ABS_MT_POSITION_X, fdata->x);
 		input_report_abs(idev, ABS_MT_POSITION_Y, fdata->y);
 		input_mt_sync(idev);
+		}
 	}
 }
 
 static void htc_input_report(struct input_dev *idev,
 				struct atmel_finger_data *fdata, uint8_t press, uint8_t last)
 {
-	if (!press) {
+ if (scr_suspended == false) {
+   if (!press) {
 		input_report_abs(idev, ABS_MT_AMPLITUDE, 0);
 		input_report_abs(idev, ABS_MT_POSITION, BIT(31));
 	} else {
 		input_report_abs(idev, ABS_MT_AMPLITUDE, fdata->z << 16 | fdata->w);
 		input_report_abs(idev, ABS_MT_POSITION,
 			(last ? BIT(31) : 0) | fdata->x << 16 | fdata->y);
+		}
 	}
 }
 
@@ -1386,6 +1394,25 @@ static void atmel_ts_unlock_work_func(struct work_struct *work)
 
 give_up:
 	printk(KERN_INFO "[TP]give up delta check\n");
+}
+
+static int psensor_tp_status_handler_func(struct notifier_block *this,
+	unsigned long status, void *unused)
+{
+	struct atmel_ts_data *ts;
+
+	ts = private_ts;
+	printk(KERN_INFO "[TP]psensor status %d -> %lu\n",
+		ts->psensor_status, status);
+	if (ts->psensor_status == 0) {
+		if (status == 1)
+			ts->psensor_status = status;
+		else
+			ts->psensor_status = 0;
+	} else
+		ts->psensor_status = status;
+
+	return NOTIFY_OK;
 }
 
 static int wlc_tp_status_handler_func(struct notifier_block *this,
@@ -1682,6 +1709,10 @@ static struct t_cable_status_notifier cable_status_handler = {
     .func = cable_tp_status_handler_func,
 };
 #endif
+
+static struct notifier_block psensor_status_handler = {
+	.notifier_call = psensor_tp_status_handler_func,
+};
 
 static int atmel_ts_probe(struct i2c_client *client,
 			 const struct i2c_device_id *id)
@@ -2285,6 +2316,7 @@ static int atmel_ts_probe(struct i2c_client *client,
 #else
 	cable_detect_register_notifier(&cable_status_handler);
 #endif
+	register_notifier_by_psensor(&psensor_status_handler);
 
 	ts->flag_htc_event = 0;
 	printk(KERN_INFO "%s:[TP]done\n", __func__);
@@ -2338,7 +2370,7 @@ static int atmel_ts_suspend(struct i2c_client *client, pm_message_t mesg)
 	disable_irq(client->irq);
 
 	cancel_delayed_work_sync(&ts->unlock_work);
-	if (ts->pre_data[0] == RECALIB_UNLOCK)
+	if (ts->pre_data[0] == RECALIB_UNLOCK && ts->psensor_status)
 		confirm_calibration(ts, 0, 3);
 	cancel_work_sync(&ts->check_delta_work);
 
@@ -2346,7 +2378,7 @@ static int atmel_ts_suspend(struct i2c_client *client, pm_message_t mesg)
 	ts->finger_count = 0;
 	ts->first_pressed = 0;
 
-	if (ts->id->version >= 0x20) {
+	if (ts->id->version >= 0x20 && ts->psensor_status == 0) {
 		ts->pre_data[0] = RECALIB_NEED;
 		i2c_atmel_write(client,
 			get_object_address(ts, GEN_ACQUISITIONCONFIG_T8) + T8_CFG_ATCHCALST,
@@ -2369,7 +2401,7 @@ static int atmel_ts_resume(struct i2c_client *client)
 	printk(KERN_INFO "%s:[TP]enter\n", __func__);
 
 	if (ts->id->version >= 0x20 && ts->pre_data[0] == RECALIB_NEED) {
-		if (ts->call_tchthr[0] && !ts->wlc_status) {
+		if (ts->call_tchthr[0] && ts->psensor_status == 2 && !ts->wlc_status) {
 			printk(KERN_INFO "[TP]raise touch threshold\n");
 			i2c_atmel_write_byte_data(ts->client,
 				get_object_address(ts, TOUCH_MULTITOUCHSCREEN_T9) + T9_CFG_TCHTHR,
@@ -2424,6 +2456,8 @@ static int atmel_ts_resume(struct i2c_client *client)
 		}
 	} else {
 		if (ts->pre_data[0] != RECALIB_NEED) {
+			printk(KERN_INFO "[TP]resume in call, psensor status %d\n",
+				ts->psensor_status);
 			queue_work(ts->atmel_wq, &ts->check_delta_work);
 		} else {
 			msleep(1);
